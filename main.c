@@ -7,106 +7,97 @@
 
 int main()
 {
+    // Use the current second its compiled for uses of rand() (below)
+    srand(time(NULL));
 
     // Initialize all parameters
     Node startNode = {2, 2, 0, 2};
     Node endNode = {5, 9, 0, 0};
-    float g = 0;
-    float h = 0;
-    float f = 0;            // score: f = sum of g + h;
-    List *pHeadOpen = NULL; // Empty list
-    List *pHeadClose = NULL;
+    List *pHeadOpen = NULL;  // Empty linked list
+    List *pHeadClose = NULL; // Empty linked list
+    int isGoalReached = 0;
 
     // Update the pHeadOpen to the startNode
     pHeadOpen = addToHead(pHeadOpen, &startNode);
-    printf("Initial headOpenList: \n");
+    printf("Initial openList: \n");
     display(pHeadOpen);
-    printf("Initial headCloseList: \n");
+    printf("Initial closeList: \n");
     display(pHeadClose);
 
     // Initialize and display the board with random obstacle.
     Node board[WIDTH][HEIGHT];
     initializeBoard(board);
-    drawBoard(board, &startNode, &endNode);
+    printBoard(board, &startNode, &endNode, pHeadClose);
 
     // A* algorithm loop
-    // // Traverse to the last item of openList;
     List *currentOpenItem = pHeadOpen;
     while (currentOpenItem != NULL)
     {
         Node *lowestFNode = findLowestFNode(currentOpenItem);
-        printf("The lowest f node: (%d,%d) with f of: %d\n\n", lowestFNode->i, lowestFNode->j, lowestFNode->f);
 
-        // Check if we've reached the goal before processing neighbors
+        // Check if goal is reached
         if (lowestFNode->i == endNode.i && lowestFNode->j == endNode.j)
         {
             printf("GOAL REACHED!\n");
+            isGoalReached = 1;
             break;
         }
 
-        printf("Open list after delete: \n");
+        // Remove lowest F node from open list
         pHeadOpen = deleteItem(pHeadOpen, lowestFNode);
-        display(pHeadOpen);
 
+        // Generate neighbors
         List headNeighbourList = generateNeighbours(lowestFNode, board);
-        // Debug print
-        printf("Neighbours found: \n");
-        display(&headNeighbourList);
 
-        // Traverse the neighbourList;
         List *current = &headNeighbourList;
+        // Process each neighbor
         while (current != NULL)
         {
-            // if successor is the goal, stop search
-            if (lowestFNode->i == endNode.i && lowestFNode->j == endNode.j)
+            // Calculate g, h, and f scores
+            current->node.g = lowestFNode->g + 1;
+            int dx = abs(current->node.i - endNode.i);
+            int dy = abs(current->node.j - endNode.j);
+            current->node.h = (dx + dy) + (sqrt(2) - 2) * min(&dx, &dy);
+            current->node.f = current->node.g + current->node.h;
+
+            // Check if neighbor is already in open or closed list with better path
+            List *existingInOpen = findItem(pHeadOpen, &current->node);
+            List *existingInClosed = findItem(pHeadClose, &current->node);
+
+            if ((existingInOpen && existingInOpen->node.f <= current->node.f) ||
+                (existingInClosed && existingInClosed->node.f <= current->node.f))
             {
-                printf("ARRIVED !");
-                break;
-            }
-            // Else compute the scores
-            else
-            {
-                current->node.g = lowestFNode->g + 1;
-
-                int dx = abs(current->node.i - endNode.i);
-                int dy = abs(current->node.j - endNode.j);
-                current->node.h = (dx + dy) + (sqrt(2) - 2) * min(&dx, &dy);
-
-                current->node.f = current->node.g + current->node.h;
-            }
-
-            Node *potentialNode = NULL;
-            printf("Current node (%d,%d) and f score: %d\n", current->node.i, current->node.j, current->node.f);
-            potentialNode = findItem(pHeadOpen, &current->node);
-
-            if (potentialNode != NULL && potentialNode->f < current->node.f)
-            {
-                printf("Found in open with better F\n");
                 current = current->next;
                 continue;
             }
-            potentialNode = findItem(pHeadClose, &current->node);
-            if (potentialNode != NULL && potentialNode->f < current->node.f)
-            {
-                printf("Found in close with better F\n");
-                current = current->next;
-                continue;
-            }
-            printf("Not found, added to openList\n");
+
+            // Add neighbor to open list
             pHeadOpen = addToHead(pHeadOpen, &current->node);
+
             current = current->next;
         }
-        pHeadClose = addToHead(pHeadClose, lowestFNode);
-        currentOpenItem = pHeadOpen;
-        free(lowestFNode);
-        printf("\nCurrent Open list: \n");
-        display(pHeadOpen);
 
-        // Break the loop if the open list becomes empty
-        if (currentOpenItem == NULL)
-            break;
+        // Add current node to closed list
+        pHeadClose = addToHead(pHeadClose, lowestFNode);
+
+        // Reset for next iteration
+        currentOpenItem = pHeadOpen;
     }
+
+    // Final board drawing and processing
+    pHeadClose = addToHead(pHeadClose, &endNode);
+
+    // If we did not find any path.
+    if (!isGoalReached)
+    {
+        printf("No path found\n");
+    }
+    // Print the path list (close list).
     display(pHeadClose);
+
+    // Print the resulting board
+    printBoard(board, &startNode, &endNode, pHeadClose);
+
     return 0;
 }
 
@@ -118,10 +109,6 @@ List generateNeighbours(Node *lowestFNode, Node board[WIDTH][HEIGHT])
     {
         for (int j = 0; j < HEIGHT; j++)
         {
-            // Skip the node itself
-            if (board[i][j].i == lowestFNode->i && board[i][j].j == lowestFNode->j)
-                continue;
-
             // Check if the node is a valid neighbor (adjacent or diagonal)
             int dx = abs(board[i][j].i - lowestFNode->i);
             int dy = abs(board[i][j].j - lowestFNode->j);
@@ -129,7 +116,7 @@ List generateNeighbours(Node *lowestFNode, Node board[WIDTH][HEIGHT])
             if ((dx <= 1 && dy <= 1) && (dx + dy > 0))
             {
                 // Check if the node is not an obstacle before adding
-                if (board[i][j].isObstacle == 0)
+                if (!board[i][j].isObstacle)
                 {
                     headNeighbourList = addToHead(headNeighbourList, &board[i][j]);
                 }
@@ -142,8 +129,8 @@ List generateNeighbours(Node *lowestFNode, Node board[WIDTH][HEIGHT])
 
 Node *findLowestFNode(List *headOpenList)
 {
-    List *currentItem = headOpenList;       // Initialize the currentItem as the first element of the linkedList
-    Node *lowestNode = &headOpenList->node; // Initialize the lowestFNode as the node of the first element of the linkedList
+    Node *lowestNode = &headOpenList->node; // Initialize the lowestFNode as the node of the first element of the linked List
+    List *currentItem = headOpenList;       // Initialize the currentItem as the first element of the linked List
     while (currentItem != NULL)
     {
         if (currentItem->node.f < lowestNode->f)
@@ -152,138 +139,7 @@ Node *findLowestFNode(List *headOpenList)
         }
         currentItem = currentItem->next;
     }
-    free(currentItem);
     return lowestNode;
-}
-
-List create(Node *startNode)
-{
-    List list;
-    list.next = NULL; // Important: initialize next to NULL
-
-    if (startNode != NULL)
-    {
-        // Optional: add the start node if provided
-        List *newNode = malloc(sizeof(List));
-        newNode->node = *startNode;
-        newNode->next = NULL;
-        list.next = newNode;
-    }
-
-    return list;
-}
-
-int getSize(List *list)
-{
-    List *current = list;
-    int size = 1;
-    while (current->next != NULL)
-    {
-        size++;
-        current = current->next;
-    }
-    free(current);
-    return size;
-};
-
-List *addToHead(List *head, Node *itemToAdd)
-{
-
-    // If list is empty
-    if (head == NULL)
-    {
-        // Create the first node
-        head = malloc(sizeof(struct Node));
-        if (head == NULL)
-        {
-            return NULL; // malloc failed
-        }
-        head->node = *itemToAdd;
-        head->next = NULL;
-        // return the pointer to the new first item.
-        return head;
-    }
-
-    // Create a new node for the end of the list
-    struct List *newItem = malloc(sizeof(struct List));
-    if (newItem == NULL)
-    {
-        return head; // malloc failed, return original head
-    }
-
-    // Traverse to the last node
-    struct List *current = head;
-    while (current->next != NULL)
-    {
-        current = current->next;
-    }
-
-    // Add the new node
-    newItem->node = *itemToAdd;
-    newItem->next = NULL;
-    current->next = newItem;
-
-    // Can be ignored, as we add item from the head.
-    return head;
-}
-
-List *deleteItem(List *head, Node *itemToDelete)
-{
-    if (head == NULL)
-    {
-        return NULL;
-    }
-
-    List *current = head;
-    List *prev = NULL;
-
-    // Special case: deleting the first node
-    if (current->node.i == itemToDelete->i &&
-        current->node.j == itemToDelete->j)
-    {
-        head = current->next;
-        // DO NOT free itemToDelete here, as it might be a node from the original list
-        return head;
-    }
-
-    // Traverse the list to find the node
-    while (current != NULL)
-    {
-        if (current->node.i == itemToDelete->i &&
-            current->node.j == itemToDelete->j)
-        {
-            if (prev != NULL)
-            {
-                prev->next = current->next;
-            }
-            // Again, do not free itemToDelete
-            return head;
-        }
-        prev = current;
-        current = current->next;
-    }
-
-    // Node not found
-    return head;
-}
-
-Node *findItem(List *head, Node *itemToFind)
-{
-    if (head == NULL || itemToFind)
-    {
-        return NULL;
-    }
-    List *current = head;
-    while (current != NULL)
-    {
-        if (current->node.i == itemToFind->i && current->node.j == itemToFind->j)
-        {
-            return &current->node;
-        }
-        current = current->next;
-    }
-
-    return NULL;
 }
 
 int min(const int *a, const int *b)
@@ -291,9 +147,9 @@ int min(const int *a, const int *b)
     return (*a < *b) ? *a : *b;
 }
 
-int display(List *list)
+int display(const List *list)
 {
-    List *curent = list;
+    const List *curent = list;
     while (curent != NULL)
     {
         printf("(%d,%d | score: %d, obs: %d) -> \n", curent->node.i, curent->node.j, curent->node.f, curent->node.isObstacle);
@@ -313,7 +169,7 @@ int initializeBoard(Node board[WIDTH][HEIGHT])
         {
             board[i][j].i = i;
             board[i][j].j = j;
-            board[i][j].isObstacle = 0; // Generate either an obstacle or a free node rand() % 2.
+            board[i][j].isObstacle = rand() % 2; // Generate either an obstacle or a free node.
             board[i][j].f = 0;
         }
     }
@@ -321,7 +177,7 @@ int initializeBoard(Node board[WIDTH][HEIGHT])
     return 0;
 }
 
-int drawBoard(const Node board[WIDTH][HEIGHT], const Node *startNode, const Node *endNode)
+int printBoard(Node board[WIDTH][HEIGHT], const Node *startNode, const Node *endNode, List *closedList)
 {
     int i = 0;
     int j = 0;
@@ -338,19 +194,24 @@ int drawBoard(const Node board[WIDTH][HEIGHT], const Node *startNode, const Node
         {
             if (i == startNode->i && j == startNode->j)
             {
-                printf("START  ");
+                printf("START ");
             }
             else if (i == endNode->i && j == endNode->j)
             {
-                printf("END   ");
+                printf("END  ");
+            }
+            else if (findItem(closedList, &board[i][j]))
+            {
+                printf("-     ");
             }
             else
             {
-                printf("%d,%d   ", board[i][j].isObstacle, board[i][j].f);
+                printf("%d     ", board[i][j].isObstacle);
             }
         }
         printf("\n");
     }
+    printf("\n");
 
     return 0;
 }
